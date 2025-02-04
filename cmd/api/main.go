@@ -3,6 +3,7 @@ package main
 import (
 	"bot/internal/parser"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
@@ -41,4 +42,5 @@ func main() {
 
 	log.Println("Bot is running...")
 	bot.Start()
+	http.ListenAndServe(":8080", http.HandlerFunc(http.NotFound))
 }
