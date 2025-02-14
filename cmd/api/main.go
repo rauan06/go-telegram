@@ -3,7 +3,9 @@ package main
 import (
 	"bot/internal/parser"
 	"bot/internal/request"
+	"bot/logger"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -13,23 +15,11 @@ import (
 )
 
 const (
-	helpText = `1. Команда /start – запускает чат-бота, выводит краткое описание его
-возможностей и инструкции по использованию. Это помогает
-пользователю быстро разобраться с интерфейсом и начать работу.
-2. Команда /help – предоставляет справочную информацию о доступных
-командах, объясняет, как вводить запросы и какие возможности
-предоставляет бот. Также содержит примеры запроса и ответа.
-3. Команда /quote – позволяет пользователю ввести ключевые слова или
-тему, после чего бот предоставляет релевантные литературные цитаты.
-Это особенно полезно для студентов, преподавателей и
-исследователей, нуждающихся в точных формулировках и примерах из
-классической литературы.
-4. Команда /context – анализирует контекст цитаты и предоставляет
-дополнительную информацию о произведении, его авторе и
-историческом значении цитируемого фрагмента.
-5. Дополнительные команды, такие как /random_quote, позволяют
-пользователям изучать случайные цитаты, что способствует
-расширению литературного кругозора.`
+	helpText = `/start – Запускает чат-бота, дает краткое описание возможностей и инструкции.
+/help – Предоставляет справочную информацию о командах, запросах и примеры.
+/quote <ключевые слова> – Позволяет вводить ключевые слова для получения литературных цитат.
+/context <текст цитаты> – Анализирует цитату, предоставляя информацию о произведении и авторе.
+/random_quote – Позволяет изучать случайные цитаты для расширения кругозора.`
 	context = `проанализируй контекст цитаты и предоставь
 дополнительную информацию о произведении, его авторе и
 историческом значении цитируемого фрагмента, уложи свой ответ в не более чем 20 слов:`
@@ -39,6 +29,9 @@ const (
 func main() {
 	token := os.Getenv("TELEGRAM_BOT_TOKEN") // Set your bot token as an environment variable
 	api_token := strings.Trim(os.Getenv("API_KEY"), " ")
+
+	logger := logger.SetupPrettySlog(os.Stdout)
+	slog.SetDefault(logger)
 
 	if token == "" {
 		log.Fatal("TELEGRAM_BOT_TOKEN is not set")
@@ -52,29 +45,39 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Log when the bot starts
+	log.Println("Bot is starting...")
+
 	bot.Handle("/help", func(c telebot.Context) error {
+		log.Println("Received /help command")
 		return c.Send(helpText)
 	})
 
 	bot.Handle("/start", func(c telebot.Context) error {
-		return c.Send("Здравствуйте, чем могу вам помочь?")
+		log.Println("Received /start command")
+		go request.SendRequest("", "", api_token)
+		go parser.ParseQute()
+		return c.Send("Бот готов принимать ваши запросы")
 	})
 
 	bot.Handle("/random_quote", func(c telebot.Context) error {
+		log.Println("Received /random_quote command")
 		quote, err := parser.ParseQute()
 		if err != nil {
+			log.Println("Error fetching random quote:", err)
 			return c.Send("Couldn't find any quotes")
 		}
 		return c.Send(quote)
 	})
 
 	bot.Handle("/quote", func(c telebot.Context) error {
+		log.Println("Received /quote command")
 		messageText := c.Text()
 
 		if len(messageText) > 0 {
 			answer, err := request.SendRequest(query, messageText, api_token)
 			if err != nil {
-				log.Println(err)
+				log.Println("Error sending request for /quote:", err)
 				return c.Send("Произошла ошибка на стороне сервера.")
 			}
 			return c.Send(answer)
@@ -83,12 +86,13 @@ func main() {
 	})
 
 	bot.Handle("/context", func(c telebot.Context) error {
+		log.Println("Received /context command")
 		messageText := c.Text()
 
 		if len(messageText) > 0 {
 			answer, err := request.SendRequest(context, messageText, api_token)
 			if err != nil {
-				log.Println(err)
+				log.Println("Error sending request for /context:", err)
 				return c.Send("Произошла ошибка на стороне сервера.")
 			}
 			return c.Send(answer)
@@ -97,6 +101,7 @@ func main() {
 	})
 
 	bot.Handle(telebot.OnText, func(c telebot.Context) error {
+		log.Println("Received text message")
 		return c.Send(helpText)
 	})
 
